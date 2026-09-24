@@ -77,6 +77,30 @@ python scripts/generate_eval.py --model data/model --top-k 3 --output outputs/ra
 python scripts/generate_eval.py --model data/model --adapter outputs/pilot-lora --output outputs/lora.jsonl
 ```
 
+## 导出 GGUF 并在 Ollama 运行
+
+本机的小样本 LoRA 已导出为 `outputs/pilot-q4_k_m.gguf`（Q4_K_M，约 2.5 GB），并以 `soku-wiki-pilot` 导入 Ollama。运行 `ollama run soku-wiki-pilot` 即可试用。这个试验模型在 8 道未见过的 Wiki 题上尚无可靠提升，实际查询建议继续使用检索增强。
+
+Windows 上可用 llama.cpp 的转换脚本和工具复现。以下路径按本机目录编写，其他机器请调整：
+
+```powershell
+conda activate py310
+git clone --depth 1 https://github.com/ggml-org/llama.cpp.git data/llama.cpp
+python -m pip install -e data/llama.cpp/gguf-py
+python -m pip install 'sentencepiece>=0.1.98,<0.3.0' 'protobuf>=4.21.0,<5.0.0'
+python data/llama.cpp/convert_hf_to_gguf.py data/model --outfile outputs/base-f16.gguf --outtype f16
+python data/llama.cpp/convert_lora_to_gguf.py outputs/pilot-lora --base data/model --outfile outputs/pilot-lora.gguf --outtype f16
+& D:/AI/llama.cpp/build/bin/Release/llama-export-lora.exe -m outputs/base-f16.gguf --lora outputs/pilot-lora.gguf -o outputs/pilot-merged-f16.gguf
+& D:/AI/llama.cpp/build/bin/Release/llama-quantize.exe outputs/pilot-merged-f16.gguf outputs/pilot-q4_k_m.gguf Q4_K_M
+Set-Content data/Modelfile.pilot 'FROM D:/workspace/wiki-agent/outputs/pilot-q4_k_m.gguf'
+ollama create soku-wiki-pilot -f data/Modelfile.pilot
+ollama run soku-wiki-pilot
+```
+
+导出时临时升级了 `protobuf` 和 `sentencepiece`；完成后，本机已恢复原来的 `3.20.3` 和 `0.1.97`。共用 Conda 环境的其他项目可能对这两个版本有要求。
+
+这些 GGUF 和 Ollama 模型仅留在本机。上游 Wiki 未声明再发布许可，不要将含训练数据的权重公开上传。
+
 ## 路线图
 
 - [x] 上游结构与授权检查、硬件和底座选型
