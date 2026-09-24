@@ -52,12 +52,13 @@ python scripts/download_model.py
 {"id":"unique-id","question":"问题","answer":"经核对的答案","source_path":"src/路径.md","source_revision":"完整上游commit SHA"}
 ```
 
-按**页面**划分训练/测试集，不能让同一页面的相似问答跨集合。至少覆盖常见问法、同义词、容易混淆的角色和不确定问题；不要根据页面标题机械生成答案，也不要把未核对的模型生成内容直接投入训练。
+按**页面**划分训练/测试集，不能让同一页面的相似问答跨集合。至少覆盖常见问法、同义词、容易混淆的角色和不确定问题。自动生成的问答应保留可核对的原文证据，训练前抽样人工复核，过滤错答和重复题。
 
 ```bash
-python scripts/check_qa.py data/qa/train.jsonl data/qa/test.jsonl
+python scripts/generate_synthetic_qa.py --output-dir data/qa/generated
+python scripts/check_qa.py data/qa/generated/train.jsonl data/qa/dev.jsonl data/qa/test.jsonl
 python scripts/eval_retrieval.py --test data/qa/test.jsonl
-python scripts/train.py --model data/model --train data/qa/train.jsonl
+python scripts/train.py --model data/model --train data/qa/generated/train.jsonl
 ```
 
 训练默认 `max_length=1024`、batch 1、累积 8、LoRA r=16、2 epoch。若显存不足，先降至 `--max-length 512`；若欠拟合，先改善问答质量再考虑增加轮数。训练只保存本地 adapter 至 `outputs/`，不自动上传。正式实验记录底座版本、上游 SHA、数据量、训练参数、峰值显存和测试结果。
@@ -79,7 +80,18 @@ python scripts/generate_eval.py --model data/model --adapter outputs/pilot-lora 
 
 ## 导出 GGUF 并在 Ollama 运行
 
-本机的小样本 LoRA 已导出为 `outputs/pilot-q4_k_m.gguf`（Q4_K_M，约 2.5 GB），并以 `soku-wiki-pilot` 导入 Ollama。运行 `ollama run soku-wiki-pilot` 即可试用。这个试验模型在 8 道未见过的 Wiki 题上尚无可靠提升，实际查询建议继续使用检索增强。
+本机的小样本试验模型 `soku-wiki-pilot` 保留作对照。全量训练模型已导出为 `outputs/full-q4_k_m.gguf`（Q4_K_M，约 2.5 GB），并以 `soku-wiki-full` 导入 Ollama。可用 `ollama run soku-wiki-full` 直接试用；Wiki 问答请走下方的本地检索入口。
+
+需要查询 Wiki 时，使用本地检索入口；它会把匹配的 Wiki 片段交给 Ollama，并另行列出检索资料，便于核对：
+
+```powershell
+python scripts/ask_ollama.py '练习模式显示 60F，正常应该是多少？'
+python scripts/ask_ollama.py --test data/qa/test.jsonl --output outputs/ollama-rag-test.jsonl
+```
+
+默认调用本机 `soku-wiki-full`，也可传 `--model` 指定其他已安装的 Ollama 模型。资料不足时应明确说不知道。当前 [8 题复测记录](docs/full-qa-training-2026-09-24.md)显示全量 adapter 单独答对 0/8，加检索后答对 8/8；这是小规模人工复核结果，不能代表整体 Wiki 准确率。
+
+本机全量训练集由 27B 本地模型按页面生成。脚本会校验每条问答的证据句确实出现在所标注的语料片段中，并将开发/测试页面从训练集排除。原文证据匹配不能代替答案含义的人工复核。
 
 Windows 上可用 llama.cpp 的转换脚本和工具复现。以下路径按本机目录编写，其他机器请调整：
 

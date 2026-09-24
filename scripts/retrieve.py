@@ -10,8 +10,10 @@ from pathlib import Path
 def tokens(text):
     # Chinese bigrams plus Latin words and numbers; sufficient for a transparent baseline.
     compact = re.findall(r"[\u3400-\u9fff]|[a-zA-Z0-9_]+", text.lower())
+    mixed_parts = [part for term in compact for part in re.findall(r"[a-z_]+|[0-9]+", term)
+                   if part != term]
     return [compact[i] + compact[i + 1] for i in range(len(compact) - 1)
-            if re.fullmatch(r"[\u3400-\u9fff]", compact[i]) and re.fullmatch(r"[\u3400-\u9fff]", compact[i + 1])] + compact
+            if re.fullmatch(r"[\u3400-\u9fff]", compact[i]) and re.fullmatch(r"[\u3400-\u9fff]", compact[i + 1])] + compact + mixed_parts
 
 
 def search(query, corpus, k=5):
