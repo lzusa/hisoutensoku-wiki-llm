@@ -20,7 +20,7 @@ def main():
     from trl import SFTConfig, SFTTrainer
 
     if not torch.cuda.is_available():
-        raise SystemExit("需要 CUDA GPU；推荐 WSL2 + 支持 Blackwell 的 PyTorch")
+        raise SystemExit("需要 CUDA GPU；请检查 Windows Conda 环境中的 PyTorch CUDA 安装")
     rows = [json.loads(line) for line in args.train.read_text(encoding="utf-8").splitlines() if line.strip()]
     if not rows:
         raise SystemExit("训练集为空。先人工审核并填写 data/qa/train.jsonl")
@@ -34,7 +34,7 @@ def main():
         args.model,
         quantization_config=BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                                              bnb_4bit_use_double_quant=True, bnb_4bit_compute_dtype=torch.bfloat16),
-        device_map="auto", torch_dtype=torch.bfloat16,
+        device_map="auto", dtype=torch.bfloat16,
     )
     config = SFTConfig(
         output_dir=args.output, max_length=args.max_length, num_train_epochs=args.epochs,
@@ -47,11 +47,12 @@ def main():
                       task_type="CAUSAL_LM", target_modules="all-linear")
     trainer = SFTTrainer(model=model, args=config, train_dataset=dataset,
                          processing_class=tokenizer, peft_config=lora)
+    torch.cuda.reset_peak_memory_stats()
     trainer.train()
     trainer.save_model(args.output)
     tokenizer.save_pretrained(args.output)
+    print(f"peak_reserved_mib={torch.cuda.max_memory_reserved() / 1024**2:.1f}")
 
 
 if __name__ == "__main__":
     main()
-

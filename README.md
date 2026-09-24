@@ -21,19 +21,26 @@
 
 ## 快速开始
 
-推荐在 WSL2 Ubuntu 内运行训练，使用与 RTX 50 系列兼容的 NVIDIA 驱动、CUDA PyTorch。先用 `nvidia-smi` 和 Python 确认 GPU 可见。训练需要下载底座模型，运行时间和显存峰值需在本机实测。
+本机采用原生 Windows + Conda 的 `py310` 环境。已验证该环境的 PyTorch 2.11.0+cu128 能在 RTX 5070 Ti 上执行 CUDA 矩阵运算。该环境里的 Transformers、Datasets、Accelerate 版本较旧，运行训练前还需升级，并安装 TRL、PEFT、bitsandbytes。训练需要下载底座模型，运行时间和显存峰值需在本机实测。
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-# 按 PyTorch 官方说明安装适合本机 CUDA/Blackwell 的 PyTorch 后，再装项目依赖
-pip install -r requirements.txt
+在 PowerShell 中：
+
+```powershell
+conda activate py310
+python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+# 本机已经装有支持 RTX 5070 Ti 的 PyTorch 2.11.0+cu128
+python -m pip install -r requirements.txt
+New-Item -ItemType Directory -Force data | Out-Null
 git clone --filter=blob:none --sparse https://github.com/soku-cn/soku-cn.github.io.git data/upstream
 git -C data/upstream sparse-checkout set src
 python scripts/build_corpus.py
 python scripts/retrieve.py '相对等级如何划分？'
+python scripts/download_model.py
 ```
+
+`download_model.py` 从[Qwen 在 ModelScope 的同名模型](https://modelscope.cn/models/Qwen/Qwen3-4B-Instruct-2507)下载到本地 `data/model/`，再运行 `python scripts/train.py --model data/model`。实验时记录实际权重修订版本。
+
+本机原有 `py310` 同时装有其他软件。升级训练依赖后，`pix2tex` 对旧版 `tokenizers` 的精确版本要求与本项目冲突；使用其他软件前请先检查 `python -m pip check`。本项目的[首次实验记录](docs/pilot-2026-09-24.md)列出实测版本和结果。
 
 `data/` 被 Git 忽略。上游仓库含大量图片，使用 sparse checkout 减少下载；如果只运行数据整理和检索，Python 标准库即可。
 
@@ -50,7 +57,7 @@ python scripts/retrieve.py '相对等级如何划分？'
 ```bash
 python scripts/check_qa.py data/qa/train.jsonl data/qa/test.jsonl
 python scripts/eval_retrieval.py --test data/qa/test.jsonl
-python scripts/train.py --train data/qa/train.jsonl
+python scripts/train.py --model data/model --train data/qa/train.jsonl
 ```
 
 训练默认 `max_length=1024`、batch 1、累积 8、LoRA r=16、2 epoch。若显存不足，先降至 `--max-length 512`；若欠拟合，先改善问答质量再考虑增加轮数。训练只保存本地 adapter 至 `outputs/`，不自动上传。正式实验记录底座版本、上游 SHA、数据量、训练参数、峰值显存和测试结果。
@@ -62,13 +69,22 @@ python scripts/train.py --train data/qa/train.jsonl
 3. 对原版模型、检索增强模型、QLoRA 模型使用相同问题；人工按事实正确、拒答是否合理、版本/出处可核查打分。
 4. 只有在微调明显改善目标能力且没有明显增加幻觉时，才考虑将 adapter 用于产品。上游变动时重新构建语料并重测。
 
+三组答案可以用以下命令生成，输出保留在本地 `outputs/`；脚本不会自动把模型答案判为正确：
+
+```powershell
+python scripts/generate_eval.py --model data/model --output outputs/base.jsonl
+python scripts/generate_eval.py --model data/model --top-k 3 --output outputs/rag.jsonl
+python scripts/generate_eval.py --model data/model --adapter outputs/pilot-lora --output outputs/lora.jsonl
+```
+
 ## 路线图
 
 - [x] 上游结构与授权检查、硬件和底座选型
 - [x] 本地语料抽取、来源追踪、检索基线和训练脚本
 - [ ] 人工编写并审核训练/测试问答
-- [ ] 在 5070 Ti 上实测显存、吞吐与训练稳定性
-- [ ] 三组模型对照评测与错误分析
+- [x] 在 5070 Ti 上完成一次 Windows QLoRA 小样本试跑并记录显存
+- [x] 在首次 8 条测试题上完成三组对照与错误分析
+- [ ] 扩大人工审核数据与新测试集，验证结果是否保持
 - [ ] 确认授权后再决定是否发布数据或权重
 
 ## 参考
@@ -77,4 +93,3 @@ python scripts/train.py --train data/qa/train.jsonl
 - [Hugging Face PEFT 量化说明](https://huggingface.co/docs/peft/developer_guides/quantization)
 - [TRL SFTTrainer 文档](https://huggingface.co/docs/trl/sft_trainer)
 - [Unsloth RTX 50 系列说明](https://unsloth.ai/docs/basics/fine-tuning-llms-with-blackwell-rtx-50-series-and-unsloth)
-

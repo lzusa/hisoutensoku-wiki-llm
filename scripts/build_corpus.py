@@ -9,6 +9,14 @@ from pathlib import Path
 REPO = "https://github.com/soku-cn/soku-cn.github.io"
 
 
+def page_title(raw: str) -> str:
+    frontmatter = re.match(r"\A---\s*\n(.*?)\n---\s*\n", raw, flags=re.S)
+    if not frontmatter:
+        return ""
+    match = re.search(r"^title:\s*(.+?)\s*$", frontmatter.group(1), flags=re.M)
+    return match.group(1).strip("'\"") if match else ""
+
+
 def clean_markdown(raw: str) -> str:
     raw = re.sub(r"\A---\s*\n.*?\n---\s*\n", "", raw, flags=re.S)
     raw = re.sub(r"^:::\s*\w*\s*$", "", raw, flags=re.M)
@@ -43,14 +51,16 @@ def build(source: Path, output: Path, revision: str):
     with output.open("w", encoding="utf-8") as dest:
         for path in sorted(root.rglob("*.md")):
             relative = path.relative_to(source).as_posix()
-            text = clean_markdown(path.read_text(encoding="utf-8"))
+            raw = path.read_text(encoding="utf-8")
+            title = page_title(raw)
+            text = clean_markdown(raw)
             for index, (heading, content) in enumerate(sections(text)):
                 if len(content) < 30:
                     continue
                 record = {
                     "id": f"{relative}#{index}",
                     "path": relative,
-                    "heading": heading,
+                    "heading": f"{title} / {heading}" if title and heading else (title or heading),
                     "text": content,
                     "source_url": f"{REPO}/blob/{revision}/{relative}",
                     "revision": revision,
@@ -67,4 +77,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
     revision = subprocess.check_output(["git", "-C", str(args.source), "rev-parse", "HEAD"], text=True).strip()
     build(args.source, args.output, revision)
-
